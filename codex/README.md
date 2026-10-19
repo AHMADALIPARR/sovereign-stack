@@ -20,7 +20,5 @@ cd supervisor && mix compile
 cd ../runtime && cargo build --release && cargo run --bin codex-worker
 ```
 
-## Half Two remaining
-Real Port/NIF to Rust, llama.cpp constrained decoding, property tests, measured benchmarks.
 
-Original Grok Bot package still on shared computer at `/workspace/sovereign-stack-src/`.
+
