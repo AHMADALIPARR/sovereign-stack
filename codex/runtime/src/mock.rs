@@ -1,3 +1,7 @@
+// SnapKitty Opaque License
+// Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+// Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 //! Mock backend for deterministic testing without GPU.
 //! Seeded so Agent 3 can rely on reproducible output.
 
