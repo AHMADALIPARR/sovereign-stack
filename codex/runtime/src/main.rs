@@ -1,5 +1,8 @@
-//! Codex inference worker runtime.
-//! Ephemeral sessions, token/memory budgets, cancellation, mock + llama.cpp backends.
+//! Codex runtime — ephemeral workers, budgets, cancellation, mock backend.
+//! KV-cache is never shared across workers (I7).
+
+pub mod mock;
+pub mod ffi;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -25,7 +28,7 @@ pub struct WorkerResult {
 pub struct InferenceWorker {
     config: WorkerConfig,
     cancelled: Arc<AtomicBool>,
-    tokens_generated: Arc<AtomicU32>,
+    tokens: Arc<AtomicU32>,
     start: Instant,
 }
 
@@ -34,33 +37,28 @@ impl InferenceWorker {
         Self {
             config,
             cancelled: Arc::new(AtomicBool::new(false)),
-            tokens_generated: Arc::new(AtomicU32::new(0)),
+            tokens: Arc::new(AtomicU32::new(0)),
             start: Instant::now(),
         }
     }
 
     pub fn generate(&self) -> Result<WorkerResult, String> {
-        let mut output = String::new();
-
-        while self.tokens_generated.load(Ordering::SeqCst) as i32 < self.config.budget_tokens {
+        let mut out = String::new();
+        while (self.tokens.load(Ordering::SeqCst) as i32) < self.config.budget_tokens {
             if self.cancelled.load(Ordering::SeqCst) {
                 return Err("cancelled".into());
             }
-
-            // Mock token generation (replace with llama.cpp FFI)
-            output.push_str("token ");
-            self.tokens_generated.fetch_add(1, Ordering::SeqCst);
+            out.push_str(&mock::MockBackend::new(1).generate_token());
+            out.push(' ');
+            self.tokens.fetch_add(1, Ordering::SeqCst);
         }
-
         let wall = self.start.elapsed().as_millis() as u64;
-        let count = self.tokens_generated.load(Ordering::SeqCst) as i32;
-
         Ok(WorkerResult {
             task_id: self.config.task_id.clone(),
-            output: output.trim().to_string(),
-            token_count: count,
+            output: out.trim().to_string(),
+            token_count: self.tokens.load(Ordering::SeqCst) as i32,
             wall_time_ms: wall,
-            valid: true, // real validation happens in grammar layer
+            valid: true,
         })
     }
 
@@ -70,15 +68,12 @@ impl InferenceWorker {
 }
 
 fn main() {
-    let config = WorkerConfig {
+    let cfg = WorkerConfig {
         task_id: "demo".into(),
-        budget_tokens: 8,
-        deadline_ms: 1000,
-        context: "test".into(),
+        budget_tokens: 4,
+        deadline_ms: 500,
+        context: "slice".into(),
     };
-    let worker = InferenceWorker::new(config);
-    match worker.generate() {
-        Ok(r) => println!("OK: {} tokens in {}ms", r.token_count, r.wall_time_ms),
-        Err(e) => eprintln!("ERR: {}", e),
-    }
+    let w = InferenceWorker::new(cfg);
+    println!("{:?}", w.generate());
 }

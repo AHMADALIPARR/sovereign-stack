@@ -1,34 +1,26 @@
 defmodule Codex.Grammar.Validator do
   @moduledoc """
-  GBNF-aware output contracts.
-  Returns ValidationEvidence or ValidationError.
-  Invalid output never reaches the approved channel (I5).
+  Deterministic contracts. Invalid output never enters approved channel (I5).
   """
 
   defstruct [:valid, :reason, :evidence]
 
-  def validate_boolean(payload) when is_binary(payload) do
-    case payload do
-      "true" -> %__MODULE__{valid: true, reason: :exact_match, evidence: "boolean"}
-      "false" -> %__MODULE__{valid: true, reason: :exact_match, evidence: "boolean"}
-      _ -> %__MODULE__{valid: false, reason: :not_boolean, evidence: payload}
-    end
-  end
+  def validate_boolean("true"), do: ok("boolean")
+  def validate_boolean("false"), do: ok("boolean")
+  def validate_boolean(other), do: reject(:not_boolean, other)
 
-  def validate_enum(payload, allowed) when is_binary(payload) and is_list(allowed) do
-    if payload in allowed do
-      %__MODULE__{valid: true, reason: :in_set, evidence: payload}
-    else
-      %__MODULE__{valid: false, reason: :not_in_set, evidence: payload}
-    end
+  def validate_enum(payload, allowed) when is_list(allowed) do
+    if payload in allowed, do: ok(payload), else: reject(:not_in_set, payload)
   end
 
   def validate_command(payload) when is_binary(payload) do
-    # Placeholder for sovereign command grammar
     if String.match?(payload, ~r/^(READ|WRITE|RUN|SET|ALLOC|FREE|OPEN|FIX|TEST) /) do
-      %__MODULE__{valid: true, reason: :verb_match, evidence: "command"}
+      ok("command")
     else
-      %__MODULE__{valid: false, reason: :bad_verb, evidence: payload}
+      reject(:bad_verb, payload)
     end
   end
+
+  defp ok(e), do: %__MODULE__{valid: true, reason: :ok, evidence: e}
+  defp reject(r, e), do: %__MODULE__{valid: false, reason: r, evidence: e}
 end

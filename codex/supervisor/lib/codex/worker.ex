@@ -1,24 +1,21 @@
 defmodule Codex.Worker do
   @moduledoc """
-  Short-lived GenServer worker.
-  Receives immutable context slice, runs inference (via Port to Rust), validates, reports, terminates.
+  Short-lived GenServer. Immutable context slice. Mock or Port to Rust.
+  I3: exactly one terminal state. I4: stale messages discarded. I5: invalid never approved.
   """
 
   use GenServer
   require Logger
 
-  def start_link({task, depth, budget, deadline_ms}) do
-    GenServer.start_link(__MODULE__, {task, depth, budget, deadline_ms})
+  def start_link({task, depth, opts}) do
+    GenServer.start_link(__MODULE__, {task, depth, opts})
   end
 
   @impl true
-  def init({task, depth, budget, deadline_ms}) do
-    deadline_ref =
-      if deadline_ms > 0 do
-        Process.send_after(self(), :deadline, deadline_ms)
-      else
-        nil
-      end
+  def init({task, depth, opts}) do
+    budget = Keyword.get(opts, :budget_tokens, 64)
+    deadline_ms = Keyword.get(opts, :deadline_ms, 2000)
+    deadline_ref = if deadline_ms > 0, do: Process.send_after(self(), :deadline, deadline_ms), else: nil
 
     state = %{
       task: task,
@@ -26,7 +23,8 @@ defmodule Codex.Worker do
       budget: budget,
       deadline_ref: deadline_ref,
       status: :created,
-      ref: make_ref()
+      ref: make_ref(),
+      parent: self()
     }
 
     {:ok, state, {:continue, :admit}}
@@ -34,42 +32,33 @@ defmodule Codex.Worker do
 
   @impl true
   def handle_continue(:admit, state) do
-    # Admission control / backpressure hook
-    new_state = %{state | status: :admitted}
-    {:noreply, new_state, {:continue, :run}}
+    {:noreply, %{state | status: :admitted}, {:continue, :run}}
   end
 
   def handle_continue(:run, state) do
-    # In production: open Port to Rust runtime
-    # For now: mock result that passes validation
     result = %{
       output: "READ /opt/sovereign/bin/tool",
       token_count: 4,
-      valid: true
+      valid: true,
+      wall_ms: 1
     }
-
-    new_state = %{state | status: :validating}
     send(self(), {:result, result, state.ref})
-    {:noreply, new_state}
+    {:noreply, %{state | status: :running}}
   end
 
   @impl true
   def handle_info({:result, result, ref}, %{ref: ref} = state) do
     if state.deadline_ref, do: Process.cancel_timer(state.deadline_ref)
 
-    # I5: invalid output never enters approved channel
-    if result.valid do
-      # report to parent
-      Logger.info("Worker completed valid result")
-    else
-      Logger.warning("Worker rejected invalid output")
-    end
+    evidence = Codex.Grammar.Validator.validate_command(result.output)
+    final_status = if evidence.valid, do: :completed, else: :failed
 
-    {:stop, :normal, %{state | status: :completed}}
+    Logger.info("Worker #{inspect(self())} #{final_status}")
+    {:stop, :normal, %{state | status: final_status}}
   end
 
   def handle_info(:deadline, state) do
-    Logger.warning("Worker deadline exceeded")
+    Logger.warning("deadline")
     {:stop, :normal, %{state | status: :failed}}
   end
 
@@ -78,8 +67,5 @@ defmodule Codex.Worker do
     {:stop, :normal, %{state | status: :cancelled}}
   end
 
-  # I4: discard stale messages
-  def handle_info(_msg, state) do
-    {:noreply, state}
-  end
+  def handle_info(_msg, state), do: {:noreply, state}
 end
