@@ -1,26 +1,26 @@
-# Codex Master Contract — Three-Agent Recursive Micro-Agent Runtime
+# Codex Master Contract — Complete Half One + Integration Scaffold
 
 AGPL-3.0-only
 
-## Agents
-- **Supervisor (Elixir/OTP)** — `supervisor/`
-- **Inference (Rust)** — `runtime/`
-- **Grammar / Verification** — `grammar/`
+## What is implemented
+- Elixir DynamicSupervisor + Worker lifecycle (CREATED → TERMINATED)
+- Admission control, depth limit, deadline, cancellation
+- Message envelope + stale discard
+- Rust InferenceWorker with atomic cancel, token budget, MockBackend
+- Documented llama.cpp C ABI surface
+- Grammar Validator (boolean / enum / command contracts)
+- 3-worker demo entry point
 
-## Lifecycle
-CREATED → ADMITTED → RUNNING → VALIDATING → COMPLETED → TERMINATED
+## Invariants addressed
+I1 depth, I2 fan-out, I3 terminal state, I4 stale discard, I5 invalid rejection, I8 budget/deadline, I9 parent cancel.
 
-## Invariants (I1–I10)
-Implemented and tested in the respective modules. See source comments.
-
-## Build
+## Build & run
 ```bash
-cd supervisor && mix compile && mix test
-cd ../runtime && cargo build --release && cargo test
+cd supervisor && mix compile
+cd ../runtime && cargo build --release && cargo run --bin codex-worker
 ```
 
-## Status
-Foundation (Half One) scaffold created.
-Full llama.cpp FFI, GBNF validator, and concurrent demo pending integration (Half Two).
+## Half Two remaining
+Real Port/NIF to Rust, llama.cpp constrained decoding, property tests, measured benchmarks.
 
-Original package from Grok Bot remains on the shared computer at `/workspace/sovereign-stack-src/`.
+Original Grok Bot package still on shared computer at `/workspace/sovereign-stack-src/`.
