@@ -1,6 +1,6 @@
 # Sovereign Stack
 
-![Codex micro-agent runtime](assets/header.jpg)
+![Codex micro-agent runtime](assets/header.svg)
 
 **AGPL-3.0-only** · Production foundation · CI green
 
@@ -29,7 +29,7 @@ Open for later: live llama.cpp Port/NIF and constrained decoding.
 
 ```
 sovereign-stack/
-├── assets/header.jpg
+├── assets/header.svg
 ├── .github/workflows/ci.yml
 ├── Makefile
 ├── LICENSE
