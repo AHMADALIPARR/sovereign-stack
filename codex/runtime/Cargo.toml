@@ -4,17 +4,11 @@ version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-only"
 
-[lib]
-name = "codex_runtime"
-crate-type = ["cdylib", "rlib"]
-
 [[bin]]
 name = "codex-worker"
 path = "src/main.rs"
 
 [dependencies]
-# llama-cpp-sys or custom FFI will go here
-# For mock: no external deps yet
 
 [profile.release]
 lto = true
