@@ -1,5 +1,4 @@
-# Identical to commands.gbnf except rule names argument_list/hex_address are spelled
-# argument-list/hex-address: llama.cpp's GBNF parser only accepts [a-zA-Z0-9-] in rule names.
+# Identical to commands.gbnf except rule names use hyphens for llama.cpp.
 root ::= (instruction)+
 instruction ::= verb " " target ( " " argument-list )? "\n"
 verb ::= "FIX" | "OPEN" | "SET" | "TEST" | "RUN" | "READ" | "WRITE" | "ALLOC" | "FREE"
