@@ -1,5 +1,8 @@
+// SnapKitty Opaque License
+// Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+// Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 //! Sovereign command grammar — zero-copy lexer, parser, and execution contract.
-//! AGPL-3.0-only
 
 pub mod ast;
 pub mod contract;

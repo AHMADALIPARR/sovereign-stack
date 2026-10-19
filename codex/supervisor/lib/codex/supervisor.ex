@@ -1,3 +1,7 @@
+# SnapKitty Opaque License
+# Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+# Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 defmodule Codex.Supervisor do
   @moduledoc """
   DynamicSupervisor for ephemeral inference workers.
@@ -17,10 +21,6 @@ defmodule Codex.Supervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  @doc """
-  Spawn a worker. Returns {:ok, pid} or {:error, reason}.
-  Depth is checked here; active-count is checked by Codex.Admission.
-  """
   def spawn_worker(task, opts \\ []) do
     depth = Keyword.get(opts, :depth, 0)
 
@@ -40,9 +40,6 @@ defmodule Codex.Supervisor do
     DynamicSupervisor.which_children(__MODULE__)
   end
 
-  @doc """
-  I9: parent termination / explicit cancel triggers defined child cancellation.
-  """
   def cancel_all do
     which_children()
     |> Enum.each(fn

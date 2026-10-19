@@ -1,3 +1,7 @@
+# SnapKitty Opaque License
+# Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+# Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 defmodule Codex.Grammar.Validator do
   @moduledoc """
   Deterministic contracts. Invalid output never enters approved channel (I5).
