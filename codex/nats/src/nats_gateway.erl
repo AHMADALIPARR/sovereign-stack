@@ -1,3 +1,7 @@
+%% SnapKitty Opaque License
+%% Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+%% Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+%%
 %% Gateway that bridges the local hand-rolled NATS to a real NATS server.
 %% Connects outbound, subscribes to configured subjects, and forwards
 %% publications in both directions.
