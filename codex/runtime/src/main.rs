@@ -1,12 +1,12 @@
-//! Codex runtime — ephemeral workers, budgets, cancellation, mock backend.
-//! KV-cache is never shared across workers (I7).
+//! Production-oriented Codex runtime.
+//! Ephemeral workers, hard budgets, cancellation, no shared mutable KV.
 
 pub mod mock;
 pub mod ffi;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
@@ -23,6 +23,13 @@ pub struct WorkerResult {
     pub token_count: i32,
     pub wall_time_ms: u64,
     pub valid: bool,
+}
+
+#[derive(Debug)]
+pub enum WorkerError {
+    Cancelled,
+    BudgetExceeded,
+    DeadlineExceeded,
 }
 
 pub struct InferenceWorker {
@@ -42,16 +49,22 @@ impl InferenceWorker {
         }
     }
 
-    pub fn generate(&self) -> Result<WorkerResult, String> {
+    pub fn generate(&self) -> Result<WorkerResult, WorkerError> {
+        let deadline = Duration::from_millis(self.config.deadline_ms);
         let mut out = String::new();
+
         while (self.tokens.load(Ordering::SeqCst) as i32) < self.config.budget_tokens {
             if self.cancelled.load(Ordering::SeqCst) {
-                return Err("cancelled".into());
+                return Err(WorkerError::Cancelled);
             }
-            out.push_str(&mock::MockBackend::new(1).generate_token());
+            if self.start.elapsed() > deadline {
+                return Err(WorkerError::DeadlineExceeded);
+            }
+            out.push_str(&mock::MockBackend::new(self.tokens.load(Ordering::SeqCst) as u64).generate_token());
             out.push(' ');
             self.tokens.fetch_add(1, Ordering::SeqCst);
         }
+
         let wall = self.start.elapsed().as_millis() as u64;
         Ok(WorkerResult {
             task_id: self.config.task_id.clone(),
@@ -67,13 +80,45 @@ impl InferenceWorker {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn respects_budget() {
+        let w = InferenceWorker::new(WorkerConfig {
+            task_id: "t".into(),
+            budget_tokens: 3,
+            deadline_ms: 1000,
+            context: "c".into(),
+        });
+        let r = w.generate().unwrap();
+        assert_eq!(r.token_count, 3);
+    }
+
+    #[test]
+    fn cancel_stops() {
+        let w = InferenceWorker::new(WorkerConfig {
+            task_id: "t".into(),
+            budget_tokens: 1000,
+            deadline_ms: 5000,
+            context: "c".into(),
+        });
+        w.cancel();
+        assert!(matches!(w.generate(), Err(WorkerError::Cancelled)));
+    }
+}
+
 fn main() {
     let cfg = WorkerConfig {
-        task_id: "demo".into(),
-        budget_tokens: 4,
-        deadline_ms: 500,
+        task_id: "prod-demo".into(),
+        budget_tokens: 8,
+        deadline_ms: 1000,
         context: "slice".into(),
     };
     let w = InferenceWorker::new(cfg);
-    println!("{:?}", w.generate());
+    match w.generate() {
+        Ok(r) => println!("OK {} tokens in {}ms", r.token_count, r.wall_time_ms),
+        Err(e) => eprintln!("ERR {:?}", e),
+    }
 }
