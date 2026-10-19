@@ -1,54 +1,56 @@
 # Sovereign Stack
 
-AGPL-3.0-only
+![Codex micro-agent runtime](assets/header.jpg)
 
-Production-oriented repository for the Codex micro-agent runtime and the sovereign command grammar.
+**AGPL-3.0-only** · Production foundation · CI green
+
+Three-agent recursive micro-agent runtime and sovereign command grammar.
+
+## What this is
+
+Isolated, bounded, short-lived inference workers under an Elixir/OTP supervisor.
+Rust runtime for execution. Deterministic grammar contracts. No Python. No TypeScript.
 
 ## Status
 
-**Production foundation.**
+**v1.0.0 production foundation** — CI passing on `main`.
 
-- `sovereign-cmd/` — complete zero-dependency Rust lexer, parser, and execution contract with tests
-- `codex/` — Elixir DynamicSupervisor + Rust InferenceWorker with budgets, cancellation, mock backend, and grammar contracts
-- CI — GitHub Actions runs `cargo test` / `cargo build` for both Rust crates and `mix compile` for the supervisor
-- License — AGPL-3.0-only
+| Component | Language | State |
+|-----------|----------|-------|
+| `sovereign-cmd/` | Rust | Complete lexer, parser, contract, tests |
+| `codex/supervisor/` | Elixir/OTP | DynamicSupervisor, admission, lifecycle, cancel |
+| `codex/runtime/` | Rust | InferenceWorker, budgets, cancellation, mock backend |
+| `codex/grammar/` | Elixir | Boolean / enum / command validators |
+| CI | GitHub Actions | Rust test+build, Elixir compile |
 
-Not yet a full llama.cpp production deployment (Port/NIF + constrained decoding still open), but the core contracts, supervision, and parsing are production-structured and tested.
+Open for later: live llama.cpp Port/NIF and constrained decoding.
 
 ## Layout
 
 ```
 sovereign-stack/
+├── assets/header.jpg
 ├── .github/workflows/ci.yml
 ├── Makefile
 ├── LICENSE
-├── README.md
-├── sovereign-cmd/          # complete
-│   ├── src/{ast,lexer,parser,contract,error,main,lib}.rs
-│   ├── tests/basic.rs
+├── sovereign-cmd/
+│   ├── src/
+│   ├── tests/
 │   └── grammar/commands.llama.gbnf
 └── codex/
-    ├── supervisor/         # Elixir/OTP
-    ├── runtime/            # Rust worker
-    └── grammar/            # validators
+    ├── supervisor/
+    ├── runtime/
+    └── grammar/
 ```
 
-## Build & Test
+## Build
 
 ```bash
 make test
 make build
 ```
 
-Or individually:
-
-```bash
-cd sovereign-cmd && cargo test
-cd codex/runtime && cargo test
-cd codex/supervisor && mix compile
-```
-
-## Invariants covered
+## Invariants
 
 I1 depth · I2 fan-out · I3 terminal state · I4 stale discard · I5 invalid rejection · I8 budget/deadline · I9 parent cancel
 
