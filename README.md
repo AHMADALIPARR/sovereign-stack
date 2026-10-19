@@ -8,11 +8,12 @@
   <img src="https://img.shields.io/badge/CI-passing-brightgreen" alt="CI">
   <img src="https://img.shields.io/badge/Elixir-1.18-purple" alt="Elixir">
   <img src="https://img.shields.io/badge/Rust-1.70%2B-orange" alt="Rust">
+  <img src="https://img.shields.io/badge/Erlang-NATS-brightgreen" alt="Erlang NATS">
 </p>
 
-**Sovereign Stack** is a production-oriented, actor-supervised micro-agent runtime that replaces monolithic agent execution with isolated, bounded, short-lived inference workers. It pairs a zero-dependency Rust command grammar with an Elixir/OTP supervisor and a Rust inference runtime. The design is deliberately constrained: no Python, no TypeScript, no shared mutable prompt buffers, and no silent validation failures.
+**Sovereign Stack** is a production-oriented, actor-supervised micro-agent runtime that replaces monolithic agent execution with isolated, bounded, short-lived inference workers. It pairs a zero-dependency Rust command grammar with an Elixir/OTP supervisor, a Rust inference runtime, and a hand-rolled Erlang NATS messaging layer with a gateway to real NATS.
 
-Continuous integration is green on `main`. The core contracts, supervision tree, and parsing pipeline are complete and tested.
+Continuous integration is green on `main`. The core contracts, supervision tree, parsing pipeline, and NATS bridge are complete and tested.
 
 Monolithic agent loops accumulate context, hide failure modes, and make cancellation expensive. Sovereign Stack inverts that model. A parent request is admitted by a supervisor. The supervisor spawns a bounded number of ephemeral workers. Each worker receives an immutable context slice, executes under a finite deadline and token budget, produces a grammar-constrained payload, and terminates. The parent aggregates only approved results. Resources are reclaimed. There is no long-lived mutable prompt buffer shared across workers.
 
@@ -20,7 +21,7 @@ Monolithic agent loops accumulate context, hide failure modes, and make cancella
 
 ## Architecture
 
-The system is organized around three independent agents that meet at a single integration barrier. Agent ownership is strict. No agent reads or writes another agent's private state.
+The system is organized around three independent agents that meet at a single integration barrier. Messaging between components and to external systems goes through the Erlang NATS layer.
 
 ```mermaid
 graph TD
@@ -35,6 +36,8 @@ graph TD
     E -->|approved| B
     E -->|rejected| F[Discard]
     B --> G[Aggregated Result]
+    B -.->|publish| N[Erlang NATS]
+    N -->|gateway| R[Real NATS]
 ```
 
 | Agent | Ownership | Language | Responsibility |
@@ -42,6 +45,7 @@ graph TD
 | Agent 1 | `supervisor/`, `routing/` | Elixir/OTP | DynamicSupervisor, lifecycle, admission, cancellation |
 | Agent 2 | `runtime/`, `ffi/` | Rust + C ABI | Ephemeral inference sessions, budgets, mock backend |
 | Agent 3 | `grammar/`, `validation/` | Elixir | GBNF contracts, rejection of malformed output |
+| Messaging | `nats/` | Erlang | Hand-rolled NATS + gateway to real NATS |
 
 The supervisor never holds model weights. Each worker receives an immutable context slice, executes under a finite deadline and token budget, and terminates. Invalid output is rejected before it can reach the parent. Stale messages from already-terminated workers are discarded. The message envelope carries a unique reference so that late arrivals from a previous generation of a worker cannot be accepted.
 
@@ -147,6 +151,39 @@ cargo build --release
 
 Deterministic validators for boolean, enum, and command contracts. Invalid output is rejected with structured evidence. The validator is the gate that implements invariant I5. Boolean validation accepts only the exact strings `true` and `false`. Enum validation accepts only members of a supplied set. Command validation accepts only lines that begin with a known verb. Everything else is rejected.
 
+### codex/nats
+
+Hand-rolled Erlang NATS-compatible messaging server plus a gateway to a real NATS instance.
+
+| Module | Role |
+|--------|------|
+| `nats_frame` | Protocol encode/decode |
+| `nats_sub` | Subscription table with `*` and `>` matching |
+| `nats_conn` | Per-connection state machine |
+| `nats_server` | Acceptor |
+| `nats_client` | Simple client |
+| `nats_gateway` | Outbound bridge to real NATS |
+| `nats_queue` | Queue groups |
+| `nats_inbox` | Request/reply correlation |
+| `nats_stats` | Connection accounting |
+| `nats_route` | Consistent-hash routing |
+
+The gateway connects over TCP, speaks the NATS protocol, subscribes to configured subjects, and forwards inbound messages into the local server. Outbound publications use `nats_gateway:publish/2`.
+
+```bash
+cd codex/nats
+erlc -o ebin src/*.erl
+erl -pa ebin -eval 'application:start(nats).'
+```
+
+```erlang
+nats_gateway:start_link(#{
+  host => <<"127.0.0.1">>,
+  port => 4222,
+  subjects => [<<"sovereign.>">>, <<"codex.>">>]
+}).
+```
+
 ---
 
 ## Repository Layout
@@ -177,8 +214,14 @@ sovereign-stack/
     ├── runtime/
     │   ├── Cargo.toml
     │   └── src/
-    └── grammar/
-        └── src/validator.ex
+    ├── grammar/
+    │   └── src/validator.ex
+    └── nats/
+        ├── src/
+        │   ├── nats_gateway.erl
+        │   ├── nats_server.erl
+        │   └── ...
+        └── README.md
 ```
 
 ---
