@@ -1,3 +1,7 @@
+# SnapKitty Opaque License
+# Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+# Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 defmodule Codex.Worker do
   @moduledoc """
   Short-lived GenServer worker.
@@ -48,8 +52,6 @@ defmodule Codex.Worker do
   end
 
   def handle_continue(:run, %{status: :admitted} = state) do
-    # Production path: open Port to Rust runtime.
-    # Foundation path: produce a contract-valid result and validate it.
     result = %{
       output: "READ /opt/sovereign/bin/tool",
       token_count: 4,
@@ -92,7 +94,6 @@ defmodule Codex.Worker do
     {:stop, :normal, %{state | status: :cancelled}}
   end
 
-  # I4: discard anything that does not match the current ref or arrives after terminal
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp cancel_deadline(%{deadline_ref: nil}), do: :ok
