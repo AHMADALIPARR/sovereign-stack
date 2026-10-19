@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test sovereign-cmd
+        run: cargo test --manifest-path sovereign-cmd/Cargo.toml
+      - name: Build sovereign-cmd
+        run: cargo build --release --manifest-path sovereign-cmd/Cargo.toml
+      - name: Test codex runtime
+        run: cargo test --manifest-path codex/runtime/Cargo.toml
+      - name: Build codex runtime
+        run: cargo build --release --manifest-path codex/runtime/Cargo.toml
+
+  elixir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+      - name: Compile supervisor
+        working-directory: codex/supervisor
+        run: mix deps.get && mix compile

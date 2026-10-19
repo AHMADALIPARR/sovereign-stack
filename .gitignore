@@ -1,0 +1,16 @@
+/target/
+/_build/
+/deps/
+*.ez
+*.beam
+/erl_crash.dump
+*.gguf
+*.pt
+__pycache__/
+*.pyc
+.DS_Store
+*.o
+*.so
+*.dylib
+/codex/runtime/target/
+/sovereign-cmd/target/
