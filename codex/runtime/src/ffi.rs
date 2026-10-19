@@ -1,3 +1,7 @@
+// SnapKitty Opaque License
+// Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+// Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+
 //! Documented C ABI surface for llama.cpp integration.
 //! Real bindings live behind this contract; mock satisfies it for Half One.
 
@@ -8,7 +12,6 @@ pub mod llama {
         pub n_batch: i32,
     }
 
-    // In production these are extern "C" to llama.cpp
     pub fn llama_init(_model_path: &str) -> *mut LlamaContext {
         std::ptr::null_mut()
     }

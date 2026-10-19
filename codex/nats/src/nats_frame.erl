@@ -1,3 +1,7 @@
+%% SnapKitty Opaque License
+%% Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+%% Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+%%
 %% Hand-rolled NATS protocol constants and frame helpers.
 -module(nats_frame).
 -export([

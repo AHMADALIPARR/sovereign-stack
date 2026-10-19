@@ -1,3 +1,7 @@
+%% SnapKitty Opaque License
+%% Copyright (C) 2026 Bel Esprit D'Accord Irrevocable Trust / SnapKitty Collective Limited
+%% Sealed core. See SNAPKITTY_OPAQUE_LICENSE.md
+%%
 %% NATS server acceptor. Listens and spawns nats_conn processes.
 -module(nats_server).
 -behaviour(gen_server).
