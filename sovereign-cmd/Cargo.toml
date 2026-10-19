@@ -1,0 +1,24 @@
+[package]
+name = "sovereign-cmd"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Zero-dependency parser + execution contract for the sovereign command GBNF grammar"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "sovereign_cmd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sovereign-cmd"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

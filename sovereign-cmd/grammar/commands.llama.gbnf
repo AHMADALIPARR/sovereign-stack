@@ -1,0 +1,13 @@
+# Identical to commands.gbnf except rule names argument_list/hex_address are spelled
+# argument-list/hex-address: llama.cpp's GBNF parser only accepts [a-zA-Z0-9-] in rule names.
+root ::= (instruction)+
+instruction ::= verb " " target ( " " argument-list )? "\n"
+verb ::= "FIX" | "OPEN" | "SET" | "TEST" | "RUN" | "READ" | "WRITE" | "ALLOC" | "FREE"
+target ::= identifier | filepath | hex-address
+argument-list ::= argument ( " " argument )? ( " " argument )?
+argument ::= flag | identifier | integer | hex-address
+identifier  ::= [a-zA-Z_] [a-zA-Z0-9_-]*
+filepath    ::= "/" [a-zA-Z0-9_-]+ ( "/" [a-zA-Z0-9_-]+ )* ("." [a-zA-Z0-9]+)?
+flag        ::= "--" [a-zA-Z0-9_-]+
+integer     ::= "-"? [0-9]+
+hex-address ::= "0x" [0-9a-fA-F]+
