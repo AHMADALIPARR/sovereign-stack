@@ -12,13 +12,15 @@
 
 **Sovereign Stack** is a production-oriented, actor-supervised micro-agent runtime that replaces monolithic agent execution with isolated, bounded, short-lived inference workers. It pairs a zero-dependency Rust command grammar with an Elixir/OTP supervisor and a Rust inference runtime. The design is deliberately constrained: no Python, no TypeScript, no shared mutable prompt buffers, and no silent validation failures.
 
-This repository contains the v1.0.0 production foundation. Continuous integration is green on `main`. The core contracts, supervision tree, and parsing pipeline are complete and tested. Live llama.cpp integration remains an explicit next step, not a claimed capability.
+This repository contains the v1.0.0 production foundation. Continuous integration is green on `main`. The core contracts, supervision tree, and parsing pipeline are complete and tested. Live llama.cpp integration remains an explicit next step, not a claimed capability. Every claim in this document is limited to what is present and verified in the tree.
+
+The motivation is straightforward. Monolithic agent loops accumulate context, hide failure modes, and make cancellation expensive. Sovereign Stack inverts that model. A parent request is admitted by a supervisor. The supervisor spawns a bounded number of ephemeral workers. Each worker receives an immutable context slice, executes under a finite deadline and token budget, produces a grammar-constrained payload, and terminates. The parent aggregates only approved results. Resources are reclaimed. There is no long-lived mutable prompt buffer shared across workers.
 
 ---
 
 ## Architecture
 
-The system is organized around three independent agents that meet at a single integration barrier.
+The system is organized around three independent agents that meet at a single integration barrier. Agent ownership is strict. No agent reads or writes another agent's private state.
 
 ```mermaid
 graph TD
@@ -41,7 +43,9 @@ graph TD
 | Agent 2 | `runtime/`, `ffi/` | Rust + C ABI | Ephemeral inference sessions, budgets, mock backend |
 | Agent 3 | `grammar/`, `validation/` | Elixir | GBNF contracts, rejection of malformed output |
 
-The supervisor never holds model weights. Each worker receives an immutable context slice, executes under a finite deadline and token budget, and terminates. Invalid output is rejected before it can reach the parent. Stale messages from already-terminated workers are discarded.
+The supervisor never holds model weights. Each worker receives an immutable context slice, executes under a finite deadline and token budget, and terminates. Invalid output is rejected before it can reach the parent. Stale messages from already-terminated workers are discarded. The message envelope carries a unique reference so that late arrivals from a previous generation of a worker cannot be accepted.
+
+Message flow between parent and child is asynchronous. The parent does not block waiting for a single worker. Results arrive as messages. The supervisor collects them, filters by validation evidence, and returns a structured aggregate. If a worker crashes, the supervisor records the failure and does not restart it automatically. Deterministic validation failures are not transient; restarting them would only repeat the same rejection.
 
 ---
 
@@ -66,11 +70,15 @@ CREATED → ADMITTED → RUNNING → VALIDATING → COMPLETED → TERMINATED
 | CANCELLED | Explicit cancel or deadline | TERMINATED |
 | TERMINATED | Process stopped, resources released | — |
 
+Admission happens before the worker is considered running. The supervisor checks the current active count against the configured maximum (default 32) and the requested recursion depth against the configured maximum (default 4). If either limit is exceeded, the spawn is rejected with a structured reason. The parent receives `{:rejected, reason}` and can decide whether to retry, degrade, or fail the request. No worker is started in a rejected state.
+
+Deadline propagation is part of the lifecycle. When a worker is admitted, a timer is armed. If the timer fires before a valid result arrives, the worker transitions to FAILED and then CANCELLED. The parent is not required to poll. Cancellation is also available as an explicit message. Sending `:cancel` to a worker stops its deadline timer and terminates the process. The Rust runtime exposes an atomic flag that the generate loop checks; a cancelled worker returns an error rather than a partial result that could be mistaken for success.
+
 ---
 
 ## Invariants
 
-The following invariants are enforced in code and covered by tests where noted.
+The following invariants are enforced in code and covered by tests where noted. They are the acceptance criteria for the foundation.
 
 | ID | Invariant | Status |
 |----|-----------|--------|
@@ -85,18 +93,25 @@ The following invariants are enforced in code and covered by tests where noted.
 | I9 | Parent termination triggers defined child cancellation | `cancel_all` implemented |
 | I10 | No unvalidated output mutates supervisor state | Validation before accept |
 
+Invariant I5 is the most important safety property for the current foundation. The grammar validator returns structured evidence. Only payloads that pass are eligible for aggregation. A worker that produces malformed output cannot cause the supervisor to update its own state with that output. The rejection is logged; the result is not forwarded.
+
+Invariant I7 is listed for completeness. The current runtime uses a mock backend that does not allocate a KV-cache. When a real llama.cpp binding is added, the implementation must prove that any cache reference is owned by a single worker and does not outlive the allocation that backs it. Until that proof exists, prefix reuse is disabled by design.
+
 ---
 
 ## Components
 
 ### sovereign-cmd
 
-Zero-dependency Rust crate. Zero-copy lexer, hand-written parser, and execution contract for the sovereign command grammar. The grammar is llama.cpp compatible (`commands.llama.gbnf`).
+Zero-dependency Rust crate. Zero-copy lexer, hand-written parser, and execution contract for the sovereign command grammar. The grammar is llama.cpp compatible (`commands.llama.gbnf`). The crate exposes both a library and a small CLI binary.
+
+The lexer recognizes verbs (`FIX`, `OPEN`, `SET`, `TEST`, `RUN`, `READ`, `WRITE`, `ALLOC`, `FREE`), identifiers, file paths, integers, hex addresses, and flags. It is deliberately simple and allocation-light. The parser builds a `CommandAST` enum. The execution contract then validates the AST against the rules below.
 
 Contract rules currently enforced:
 
 - `WRITE` to a memory address below `0x1000` is rejected.
 - `RUN` must be a path under `/opt/sovereign/bin/`.
+- `RUN` with a bare identifier (no path) is rejected.
 
 ```bash
 cd sovereign-cmd
@@ -104,9 +119,13 @@ cargo test
 cargo run --bin sovereign-cmd
 ```
 
+The test suite covers a valid `READ`, a protected-memory `WRITE` that must be rejected, and a `RUN` outside the permitted directory that must be rejected. These are the minimum contract tests for the foundation.
+
 ### codex/supervisor
 
-Elixir/OTP application. `DynamicSupervisor` for ephemeral workers. Admission control with configurable maximum active workers and recursion depth. Message envelopes with stale-message discard. Deadline timers. Cancellation propagation.
+Elixir/OTP application. `DynamicSupervisor` for ephemeral workers. Admission control with configurable maximum active workers and recursion depth. Message envelopes with stale-message discard. Deadline timers. Cancellation propagation. A small demo module can spawn three workers and then cancel them, which is the representative workload described in the original contract.
+
+The worker is a `GenServer`. It starts in `CREATED`, continues to `ADMITTED`, then to `RUNNING`. In the current foundation the running step produces a mock result that is known to be valid under the command grammar. The result is sent back to the worker itself with a unique reference. Only a message carrying that reference is accepted. Any other message is ignored. This implements the stale-message discard required by invariant I4.
 
 ```bash
 cd codex/supervisor
@@ -118,6 +137,8 @@ mix test
 
 Rust inference worker. `InferenceWorker` with atomic cancellation, token budget, and deadline. Deterministic `MockBackend` for testing without GPU. Documented C ABI surface for future llama.cpp binding. Unit tests cover budget respect and cancellation.
 
+The generate loop checks the cancellation flag and the elapsed time before each token. If the budget is exhausted or the deadline is exceeded, the function returns a typed error. The mock backend is seeded so that Agent 3 can rely on reproducible output during testing. No GPU is required to run the tests.
+
 ```bash
 cd codex/runtime
 cargo test
@@ -126,7 +147,7 @@ cargo build --release
 
 ### codex/grammar
 
-Deterministic validators for boolean, enum, and command contracts. Invalid output is rejected with structured evidence. The validator is the gate that implements invariant I5.
+Deterministic validators for boolean, enum, and command contracts. Invalid output is rejected with structured evidence. The validator is the gate that implements invariant I5. Boolean validation accepts only the exact strings `true` and `false`. Enum validation accepts only members of a supplied set. Command validation accepts only lines that begin with a known verb. Everything else is rejected.
 
 ---
 
@@ -179,7 +200,7 @@ Continuous integration runs on every push to `main`:
 - Rust: `cargo test` and `cargo build --release` for `sovereign-cmd` and `codex/runtime`
 - Elixir: `mix compile` for the supervisor
 
-The latest run is green. See `.github/workflows/ci.yml`.
+The latest run is green. See `.github/workflows/ci.yml`. The workflow uses the stable Rust toolchain and Elixir 1.18 on OTP 27. No additional system packages are required for the current foundation.
 
 ---
 
@@ -195,7 +216,7 @@ The following are forbidden by contract and absent from the dependency tree:
 - Silent grammar validation failures
 - Fake benchmarks or simulated production results presented as measured
 
-KV-cache reuse across workers is not assumed. The mock backend does not share writable state. Any future llama.cpp integration must prove ownership, lifetime, and concurrency before enabling prefix reuse. Until that proof exists, reuse is disabled.
+KV-cache reuse across workers is not assumed. The mock backend does not share writable state. Any future llama.cpp integration must prove ownership, lifetime, and concurrency before enabling prefix reuse. Until that proof exists, reuse is disabled. The C ABI surface in `ffi.rs` documents the expected functions (`llama_init`, `llama_generate`, `llama_cancel`, `llama_free`) but does not link against a real library. This keeps the foundation buildable on any machine that has Rust and Elixir.
 
 ---
 
@@ -208,7 +229,7 @@ This foundation does not include:
 - Measured p50/p95/p99 latencies on hardware
 - The original Grok Bot package (`ternary6502`, full earlier `micro-agents` tree, `grammar-decode` results)
 
-Those items remain out of tree or explicitly deferred. No performance number in this document is a measured production result.
+Those items remain out of tree or explicitly deferred. No performance number in this document is a measured production result. The mock backend exists so that the supervision and validation logic can be tested without GPU hardware. It is not a substitute for a production inference measurement.
 
 ---
 
@@ -216,7 +237,7 @@ Those items remain out of tree or explicitly deferred. No performance number in 
 
 GNU Affero General Public License v3.0 or later (AGPL-3.0-only).
 
-See [LICENSE](LICENSE) for the full text.
+See [LICENSE](LICENSE) for the full text. All components in this repository are covered by that license. Earlier component-level licenses that may have existed on the shared computer are not carried forward.
 
 ---
 
